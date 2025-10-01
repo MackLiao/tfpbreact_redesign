@@ -9,7 +9,7 @@ import Image from "next/image"
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-background">
+    <main className="h-screen flex flex-col bg-background">
       <div className="border-b bg-white shadow-sm">
         <div className="container mx-auto px-8 py-4">
           <div className="flex items-center justify-between">
@@ -36,9 +36,9 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-8">
-          <Tabs defaultValue="home" className="w-full">
+      <div className="bg-white border-b flex-1 flex flex-col overflow-hidden">
+        <div className="container mx-auto px-8 flex-1 flex flex-col overflow-hidden">
+          <Tabs defaultValue="home" className="w-full flex-1 flex flex-col overflow-hidden">
             <TabsList className="h-12 bg-transparent border-0 rounded-none p-0 gap-1">
               <TabsTrigger
                 value="home"
@@ -72,7 +72,7 @@ export default function Home() {
               </TabsTrigger>
             </TabsList>
 
-            <div className="bg-background">
+            <div className="bg-background flex-1 overflow-auto">
               <div className="container mx-auto px-8 py-8">
                 <TabsContent value="home" className="mt-0">
                   <HomeTab />
