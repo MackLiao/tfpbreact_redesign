@@ -1,6 +1,4 @@
-# tfbp_React
-
-A redesign of the original python shiny frontend.
+# reactappcopy
 
 *Automatically synced with your [v0.app](https://v0.app) deployments*
 
