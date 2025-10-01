@@ -54,7 +54,7 @@ export default function PerturbationResponseTab() {
                 <AccordionContent className="px-6 pb-6 pt-2">
                   <div className="space-y-4">
                     <p className="text-sm text-muted-foreground leading-relaxed">
-                      Select perturbation response sources (0-3):
+                      Select perturbation response sources:
                     </p>
                     <div className="space-y-3">
                       {Object.entries(PERTURBATION_SOURCES).map(([key, label]) => (

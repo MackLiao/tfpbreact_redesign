@@ -5,22 +5,33 @@ import BindingTab from "@/components/tabs/binding-tab"
 import PerturbationResponseTab from "@/components/tabs/perturbation-response-tab"
 import AllRegulatorCompareTab from "@/components/tabs/all-regulator-compare-tab"
 import IndividualRegulatorCompareTab from "@/components/tabs/individual-regulator-compare-tab"
+import Image from "next/image"
 
 export default function Home() {
   return (
     <main className="min-h-screen bg-background">
       <div className="border-b bg-white shadow-sm">
         <div className="container mx-auto px-8 py-3">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary">
-              <FlaskConical className="w-4 h-4 text-primary-foreground" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary">
+                <FlaskConical className="w-4 h-4 text-primary-foreground" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-foreground tracking-tight">
+                  TF Binding & Perturbation Explorer
+                </h1>
+                <p className="text-xs text-muted-foreground">Transcription factor analysis platform</p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-foreground tracking-tight">
-                TF Binding & Perturbation Explorer
-              </h1>
-              <p className="text-xs text-muted-foreground">Transcription factor analysis platform</p>
-            </div>
+            <Image
+              src="/brentlab-logo.png"
+              alt="Brentlab Logo"
+              width={120}
+              height={40}
+              className="h-10 w-auto"
+              priority
+            />
           </div>
         </div>
       </div>
