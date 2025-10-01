@@ -3,7 +3,7 @@ import { Database, BarChart3, GitCompare, Target } from "lucide-react"
 
 export default function HomeTab() {
   return (
-    <div className="space-y-8 max-w-6xl">
+    <div className="h-full flex flex-col space-y-8 max-w-6xl">
       <div className="space-y-3">
         <h2 className="text-2xl font-semibold text-foreground tracking-tight">
           Welcome to the TF Binding and Perturbation Explorer
@@ -14,7 +14,7 @@ export default function HomeTab() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-6 content-start">
         <Card className="border-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="space-y-2">
             <div className="flex items-center gap-3">
