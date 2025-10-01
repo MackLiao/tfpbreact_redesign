@@ -31,9 +31,7 @@ export default function AllRegulatorCompareTab() {
   return (
     <div className="flex gap-6 h-full">
       <aside
-        className={`shrink-0 transition-all duration-300 ease-in-out ${
-          isPanelCollapsed ? "w-12" : "w-[360px]"
-        } relative`}
+        className={`shrink-0 transition-all duration-300 ease-in-out ${isPanelCollapsed ? "w-12" : "w-80"} relative`}
       >
         <Button
           variant="outline"

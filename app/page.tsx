@@ -10,16 +10,16 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-background">
       <div className="border-b bg-white shadow-sm">
-        <div className="container mx-auto px-8 py-5">
-          <div className="flex items-center gap-3 mb-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary">
-              <FlaskConical className="w-5 h-5 text-primary-foreground" />
+        <div className="container mx-auto px-8 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary">
+              <FlaskConical className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+              <h1 className="text-xl font-semibold text-foreground tracking-tight">
                 TF Binding & Perturbation Explorer
               </h1>
-              <p className="text-sm text-muted-foreground">Transcription factor analysis platform</p>
+              <p className="text-xs text-muted-foreground">Transcription factor analysis platform</p>
             </div>
           </div>
         </div>
