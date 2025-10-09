@@ -30,6 +30,7 @@ export interface RankResponseMetadataRow {
   expressionSourceLabel: string
   expressionId?: string | null
   promotersetsig?: string | null
+  expressionMechanism?: string | null
   rank25?: number | null
   rank50?: number | null
   dtoEmpiricalPvalue?: number | null
@@ -40,11 +41,54 @@ export interface RankResponseMetadataRow {
   expressionTime?: number | null
   bindingRankThreshold?: number | null
   perturbationRankThreshold?: number | null
+  rankResponseStatus?: string | null
+  dtoStatus?: string | null
+  passing?: boolean | null
+  singleBinding?: number | null
+  compositeBinding?: number | null
+  genomicInserts?: number | null
+  mitoInserts?: number | null
+  plasmidInserts?: number | null
 }
 
 export interface RankResponseMetadataResponse {
   metadata: RankResponseMetadataRow[]
   sourceTimestamp?: string
+}
+
+export interface RankResponseReplicateTrace {
+  id: string
+  promotersetsig: string
+  bindingSource: string
+  bindingSourceLabel: string
+  expressionId: string | null
+  data: {
+    x: number[]
+    y: number[]
+    random: number[]
+    ciLower: number[]
+    ciUpper: number[]
+  }
+}
+
+export interface RankResponseExpressionGroup {
+  expressionId: string
+  expressionSource: string
+  expressionSourceLabel: string
+  expressionTime: number | null
+  random: number
+  traces: RankResponseReplicateTrace[]
+}
+
+export interface RankResponseRegulatorPayload {
+  regulator: {
+    id: string
+    symbol: string
+    locusTag: string | null
+    label: string
+  }
+  metadata: RankResponseMetadataRow[]
+  expressionGroups: Record<string, RankResponseExpressionGroup[]>
 }
 
 export interface BindingData {
