@@ -1,23 +1,134 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { ChevronLeft, ChevronRight, Info } from "lucide-react"
+import { AlertTriangle, ChevronLeft, ChevronRight, Info, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-const PERTURBATION_SOURCES = {
-  mcisaac_oe: "Overexpression (McIsaac Lab)",
-  kemmeren_tfko: "2014 TFKO (Holstege Lab)",
-  reimand_tfko: "2007 TFKO (Hu Lab)",
-}
+import { useRankResponseMetadata } from "@/lib/hooks/use-rank-response-metadata"
+import { getPerturbationSourceLabel } from "@/lib/utils"
+
+const PERTURBATION_SOURCES = [
+  { id: "mcisaac_oe", label: "Overexpression (McIsaac Lab)" },
+  { id: "kemmeren_tfko", label: "2014 TFKO (Holstege Lab)" },
+  { id: "hu_reimann_tfko", label: "2007 TFKO (Hu Lab)" },
+] as const
 
 export default function PerturbationResponseTab() {
+  const { data: metadata, isLoading, error, sourceTimestamp, refresh } = useRankResponseMetadata()
   const [selectedSources, setSelectedSources] = useState<string[]>([])
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false)
+
+  const formattedTimestamp = useMemo(() => {
+    if (!sourceTimestamp) return null
+    const parsed = new Date(sourceTimestamp)
+    if (Number.isNaN(parsed.getTime())) return null
+    return parsed.toLocaleString()
+  }, [sourceTimestamp])
+
+  const perturbationSourceMap = useMemo(() => {
+    const map = new Map<string, { label: string; regulators: Set<string> }>()
+    metadata.forEach((row) => {
+      if (!row.expressionSource) return
+      const descriptiveLabel =
+        row.expressionSourceLabel ??
+        PERTURBATION_SOURCES.find((source) => source.id === row.expressionSource)?.label ??
+        getPerturbationSourceLabel(row.expressionSource) ??
+        row.expressionSource
+      const entry = map.get(row.expressionSource)
+      if (entry) {
+        entry.regulators.add(row.regulatorSymbol)
+      } else {
+        const regulators = new Set<string>()
+        if (row.regulatorSymbol) {
+          regulators.add(row.regulatorSymbol)
+        }
+        map.set(row.expressionSource, { label: descriptiveLabel, regulators })
+      }
+    })
+    return map
+  }, [metadata])
+
+  const perturbationOptions = useMemo(() => {
+    if (perturbationSourceMap.size === 0) {
+      return PERTURBATION_SOURCES.map((source) => ({ ...source }))
+    }
+    return Array.from(perturbationSourceMap.entries())
+      .map(([id, value]) => ({ id, label: value.label }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  }, [perturbationSourceMap])
+
+  const selectedSummaries = useMemo(() => {
+    return selectedSources.map((id) => {
+      const entry = perturbationSourceMap.get(id)
+      const fallbackLabel =
+        entry?.label ??
+        PERTURBATION_SOURCES.find((source) => source.id === id)?.label ??
+        getPerturbationSourceLabel(id) ??
+        id
+      const regulators = entry?.regulators ?? new Set<string>()
+      return {
+        id,
+        label: fallbackLabel,
+        regulators,
+        regulatorCount: regulators.size,
+      }
+    })
+  }, [selectedSources, perturbationSourceMap])
+
+  const intersectionSummaries = useMemo(() => {
+    if (selectedSummaries.length < 2) return []
+
+    const intersections: Array<{ label: string; count: number }> = []
+
+    for (let i = 0; i < selectedSummaries.length - 1; i += 1) {
+      for (let j = i + 1; j < selectedSummaries.length; j += 1) {
+        const first = selectedSummaries[i]
+        const second = selectedSummaries[j]
+        let count = 0
+        first.regulators.forEach((symbol) => {
+          if (second.regulators.has(symbol)) {
+            count += 1
+          }
+        })
+        intersections.push({
+          label: `${first.label} ∩ ${second.label}`,
+          count,
+        })
+      }
+    }
+
+    if (selectedSummaries.length === 3) {
+      const [a, b, c] = selectedSummaries
+      let tripleCount = 0
+      a.regulators.forEach((symbol) => {
+        if (b.regulators.has(symbol) && c.regulators.has(symbol)) {
+          tripleCount += 1
+        }
+      })
+      intersections.push({
+        label: `${a.label} ∩ ${b.label} ∩ ${c.label}`,
+        count: tripleCount,
+      })
+    }
+
+    return intersections
+  }, [selectedSummaries])
+
+  const combinedRegulatorCount = useMemo(() => {
+    if (selectedSummaries.length === 0) return 0
+    const union = new Set<string>()
+    selectedSummaries.forEach((summary) => {
+      summary.regulators.forEach((symbol) => union.add(symbol))
+    })
+    return union.size
+  }, [selectedSummaries])
+
+  const hasSelectedData = selectedSummaries.some((summary) => summary.regulatorCount > 0)
 
   const handleSourceToggle = (source: string) => {
     setSelectedSources((prev) => {
@@ -57,23 +168,37 @@ export default function PerturbationResponseTab() {
                       Select perturbation response sources:
                     </p>
                     <div className="space-y-3">
-                      {Object.entries(PERTURBATION_SOURCES).map(([key, label]) => (
-                        <div
-                          key={key}
-                          className="flex items-start gap-3 p-3 rounded-md hover:bg-muted/50 transition-colors cursor-pointer"
-                        >
-                          <Checkbox
-                            id={key}
-                            checked={selectedSources.includes(key)}
-                            onCheckedChange={() => handleSourceToggle(key)}
-                            disabled={!selectedSources.includes(key) && selectedSources.length >= 3}
-                            className="mt-0.5"
-                          />
-                          <Label htmlFor={key} className="text-sm cursor-pointer leading-relaxed font-medium">
-                            {label}
-                          </Label>
-                        </div>
-                      ))}
+                      {perturbationOptions.map(({ id, label }) => {
+                        const summary = perturbationSourceMap.get(id)
+                        const regulatorCount = summary?.regulators.size ?? 0
+                        return (
+                          <div
+                            key={id}
+                            className="flex items-start gap-3 p-3 rounded-md hover:bg-muted/50 transition-colors cursor-pointer"
+                          >
+                            <Checkbox
+                              id={id}
+                              checked={selectedSources.includes(id)}
+                              onCheckedChange={() => handleSourceToggle(id)}
+                              disabled={
+                                isLoading ||
+                                (!selectedSources.includes(id) && selectedSources.length >= 3)
+                              }
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1">
+                              <Label htmlFor={id} className="text-sm cursor-pointer leading-relaxed font-medium">
+                                {label}
+                              </Label>
+                              {perturbationSourceMap.size > 0 ? (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {regulatorCount.toLocaleString()} regulators
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 </AccordionContent>
@@ -216,7 +341,25 @@ export default function PerturbationResponseTab() {
               <CardTitle className="text-lg font-semibold">Source Selection Summary</CardTitle>
             </CardHeader>
             <CardContent className="min-h-[500px] flex items-center justify-center">
-              {selectedSources.length === 0 ? (
+              {isLoading ? (
+                <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                  <p className="text-sm">Loading perturbation metadata…</p>
+                </div>
+              ) : error ? (
+                <div className="text-center space-y-4 p-8">
+                  <div className="flex items-center justify-center w-16 h-16 rounded-full bg-destructive/10 mx-auto">
+                    <AlertTriangle className="w-8 h-8 text-destructive" />
+                  </div>
+                  <div className="space-y-3">
+                    <h4 className="font-semibold text-lg text-foreground">Unable to load data</h4>
+                    <p className="text-sm text-muted-foreground">{error}</p>
+                    <Button variant="outline" size="sm" onClick={() => void refresh()}>
+                      Retry
+                    </Button>
+                  </div>
+                </div>
+              ) : selectedSources.length === 0 ? (
                 <div className="text-center space-y-4 p-8">
                   <div className="flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 mx-auto">
                     <Info className="w-8 h-8 text-primary" />
@@ -224,41 +367,93 @@ export default function PerturbationResponseTab() {
                   <div className="space-y-2">
                     <h4 className="font-semibold text-lg">How to Use</h4>
                     <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
-                      Select 1-3 perturbation response sources from the sidebar to see:
+                      Select 1-3 perturbation response sources from the sidebar to see regulator counts and dataset
+                      intersections.
                     </p>
-                    <ul className="text-sm text-muted-foreground space-y-2 mt-3">
-                      <li>• Number of regulators in each selected source</li>
-                      <li>• Intersections between sources (when 2+ selected)</li>
-                      <li>• Three-way intersection (when 3 selected)</li>
-                    </ul>
+                  </div>
+                </div>
+              ) : !hasSelectedData ? (
+                <div className="text-center space-y-4 p-8">
+                  <div className="flex items-center justify-center w-16 h-16 rounded-full bg-muted/40 mx-auto">
+                    <Info className="w-8 h-8 text-muted-foreground" />
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="font-semibold text-lg">No overlapping regulators found</h4>
+                    <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
+                      The selected datasets do not share regulators. Try adjusting your selection or adding another
+                      dataset.
+                    </p>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-6 w-full p-6">
-                  <h4 className="font-semibold text-center text-lg">
-                    {selectedSources.length === 1
-                      ? "Single Source Selected"
-                      : selectedSources.length === 2
-                        ? "Two-Way Comparison"
-                        : "Three-Way Comparison"}
-                  </h4>
+                  <div className="space-y-2 text-center">
+                    <h4 className="font-semibold text-lg">
+                      {selectedSources.length === 1
+                        ? "Single Source Selected"
+                        : selectedSources.length === 2
+                          ? "Two-Way Comparison"
+                          : "Three-Way Comparison"}
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Combined unique regulators across selection: {combinedRegulatorCount.toLocaleString()}
+                    </p>
+                  </div>
+
                   <div className="space-y-3">
-                    {selectedSources.map((source) => (
-                      <div key={source} className="p-4 rounded-lg bg-primary/5 border border-primary/20 text-center">
-                        <span className="text-sm font-medium">
-                          {PERTURBATION_SOURCES[source as keyof typeof PERTURBATION_SOURCES]}
-                        </span>
+                    {selectedSummaries.map((summary) => (
+                      <div
+                        key={summary.id}
+                        className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{summary.label}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{summary.id}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-2xl font-semibold text-foreground">
+                            {summary.regulatorCount.toLocaleString()}
+                          </p>
+                          <p className="text-xs text-muted-foreground">regulators</p>
+                        </div>
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-center text-muted-foreground mt-6 p-4 bg-muted/50 rounded-lg">
-                    API integration required to display regulator counts and intersections
-                  </p>
+
+                  {intersectionSummaries.length > 0 ? (
+                    <div className="space-y-3">
+                      <h5 className="text-sm font-semibold text-foreground">Intersections</h5>
+                      <div className="space-y-2">
+                        {intersectionSummaries.map((intersection) => (
+                          <div
+                            key={intersection.label}
+                            className="flex items-center justify-between rounded-md border border-border/60 bg-muted/40 px-4 py-2"
+                          >
+                            <span className="text-xs font-medium text-foreground">{intersection.label}</span>
+                            <span className="text-sm font-semibold text-foreground">
+                              {intersection.count.toLocaleString()}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {formattedTimestamp ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Source last updated: {formattedTimestamp}
+                    </p>
+                  ) : null}
                 </div>
               )}
             </CardContent>
-            <CardFooter className="text-xs text-muted-foreground border-t pt-4">
-              Select perturbation response sources from the sidebar to see regulator counts and intersections.
+            <CardFooter className="text-xs text-muted-foreground border-t pt-4 flex flex-col gap-1">
+              <span>Toggle perturbation sources in the sidebar to update counts and intersections.</span>
+              {combinedRegulatorCount > 0 ? (
+                <span className="text-foreground/80">
+                  Unique regulators shown: {combinedRegulatorCount.toLocaleString()}
+                </span>
+              ) : null}
             </CardFooter>
           </Card>
 
