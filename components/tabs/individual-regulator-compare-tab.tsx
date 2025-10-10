@@ -1,7 +1,7 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import type { Config, Data, Layout } from "plotly.js"
 import {
   Alert,
@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertTriangle, ChevronLeft, ChevronRight, Info, Loader2, RefreshCw } from "lucide-react"
+import { AlertTriangle, ChevronLeft, ChevronRight, Info, Loader2, RefreshCw, X } from "lucide-react"
 
 import { useRankResponseMetadata } from "@/lib/hooks/use-rank-response-metadata"
 import { useRankResponseRegulator } from "@/lib/hooks/use-rank-response-regulator"
@@ -48,17 +48,36 @@ interface RegulatorOption {
   locusTag: string | null
 }
 
-interface ReplicateRow {
-  id: string
-  selectionKey: string
+interface ReplicateTableRow {
+  promotersetsig: string
   bindingSourceLabel: string
-  expressionSource: string
+  rankResponseStatus: string | null
+  dtoStatus: string | null
+  genomicInserts: number | null
+  mitoInserts: number | null
+  plasmidInserts: number | null
+}
+
+interface SummaryTableRow {
+  id: string
+  bindingSourceLabel: string
+  promotersetsig: string
+  expressionId: string | null
   expressionSourceLabel: string
   expressionTime: number | null
-  promotersetsig: string
   randomExpectation: number | null
   rank25: number | null
   rank50: number | null
+  dtoEmpiricalPvalue: number | null
+  dtoFdr: number | null
+  univariateRsquared: number | null
+  univariatePvalue: number | null
+  bindingRankThreshold: number | null
+  perturbationRankThreshold: number | null
+  bindingSetSize: number | null
+  perturbationSetSize: number | null
+  singleBinding: number | null
+  compositeBinding: number | null
   passing: boolean | null
 }
 
@@ -72,9 +91,193 @@ const formatTime = (value?: number | null) => {
   return `${value} min`
 }
 
+const formatPValue = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—"
+  if (value === 0) return "<1e-12"
+  return value < 0.001 ? value.toExponential(2) : value.toFixed(3)
+}
+
+const formatNumber = (value?: number | null, digits = 3) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—"
+  return value.toFixed(digits)
+}
+
+const formatInteger = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—"
+  return Math.round(value).toLocaleString()
+}
+
+type ColumnDef<T> = {
+  key: string
+  label: string
+  description?: string
+  render: (row: T) => ReactNode
+}
+
+const REPLICATE_BASE_COLUMN_DEFS: ColumnDef<ReplicateTableRow>[] = [
+  {
+    key: "promotersetsig",
+    label: "Promoterset",
+    description: "Primary identifier for a binding replicate",
+    render: (row) => <span className="font-medium text-foreground">{row.promotersetsig}</span>,
+  },
+]
+
+const REPLICATE_GENERAL_QC_COLUMN_DEFS: ColumnDef<ReplicateTableRow>[] = [
+  {
+    key: "bindingSourceLabel",
+    label: "Binding Source",
+    description: "Source of the calling cards binding data",
+    render: (row) => <span className="font-medium text-foreground">{row.bindingSourceLabel}</span>,
+  },
+  {
+    key: "rankResponseStatus",
+    label: "Rank Response Status",
+    description: "QC flag for rank-response analysis",
+    render: (row) => row.rankResponseStatus ?? "—",
+  },
+  {
+    key: "dtoStatus",
+    label: "DTO Status",
+    description: "QC flag for Dual Threshold Optimization",
+    render: (row) => row.dtoStatus ?? "—",
+  },
+]
+
+const REPLICATE_CALLING_CARD_COLUMN_DEFS: ColumnDef<ReplicateTableRow>[] = [
+  {
+    key: "genomicInserts",
+    label: "Genomic insertions",
+    description: "Number of genomic calling cards inserts",
+    render: (row) => formatInteger(row.genomicInserts),
+  },
+  {
+    key: "mitoInserts",
+    label: "Mitochondrial insertions",
+    description: "Number of mitochondrial calling cards inserts",
+    render: (row) => formatInteger(row.mitoInserts),
+  },
+  {
+    key: "plasmidInserts",
+    label: "Plasmid insertions",
+    description: "Number of plasmid calling cards inserts",
+    render: (row) => formatInteger(row.plasmidInserts),
+  },
+]
+
+const SUMMARY_BASE_COLUMN_DEFS: ColumnDef<SummaryTableRow>[] = [
+  {
+    key: "bindingSourceLabel",
+    label: "Binding Source",
+    description: "Calling cards replicate used in the comparison",
+    render: (row) => <span className="font-medium text-foreground">{row.bindingSourceLabel}</span>,
+  },
+  {
+    key: "promotersetsig",
+    label: "Promoterset",
+    description: "Promoterset identifier for the replicate",
+    render: (row) => <span className="font-medium text-foreground">{row.promotersetsig}</span>,
+  },
+  {
+    key: "expressionId",
+    label: "Expression ID",
+    description: "Perturbation experiment identifier",
+    render: (row) => row.expressionId ?? "—",
+  },
+  {
+    key: "randomExpectation",
+    label: "Random Exp.",
+    description: "Random expectation for responsive fraction",
+    render: (row) => formatPercentage(row.randomExpectation, 2),
+  },
+]
+
+const SUMMARY_METRIC_COLUMN_DEFS: ColumnDef<SummaryTableRow>[] = [
+  {
+    key: "expressionTime",
+    label: "Time Since Perturbation",
+    description: "Time point of perturbation assay (minutes)",
+    render: (row) => formatTime(row.expressionTime),
+  },
+  {
+    key: "univariateRsquared",
+    label: "Linear Model R²",
+    description: "R² of model perturbed ~ binding",
+    render: (row) => formatNumber(row.univariateRsquared, 3),
+  },
+  {
+    key: "univariatePvalue",
+    label: "Linear Model P-value",
+    description: "P-value of model perturbed ~ binding",
+    render: (row) => formatPValue(row.univariatePvalue),
+  },
+  {
+    key: "dtoEmpiricalPvalue",
+    label: "DTO Empirical P-value",
+    description: "Empirical p-value from Dual Threshold Optimization",
+    render: (row) => formatPValue(row.dtoEmpiricalPvalue),
+  },
+  {
+    key: "dtoFdr",
+    label: "DTO Minimum FDR",
+    description: "False discovery rate from DTO",
+    render: (row) => formatPValue(row.dtoFdr),
+  },
+  {
+    key: "bindingRankThreshold",
+    label: "DTO Rank Threshold (binding)",
+    description: "Binding rank with most significant DTO overlap",
+    render: (row) => formatInteger(row.bindingRankThreshold),
+  },
+  {
+    key: "perturbationRankThreshold",
+    label: "DTO Rank Threshold (perturbation)",
+    description: "Perturbation rank with most significant DTO overlap",
+    render: (row) => formatInteger(row.perturbationRankThreshold),
+  },
+  {
+    key: "bindingSetSize",
+    label: "Binding Set Size",
+    description: "Gene count in binding set at DTO overlap",
+    render: (row) => formatInteger(row.bindingSetSize),
+  },
+  {
+    key: "perturbationSetSize",
+    label: "Perturbation Set Size",
+    description: "Gene count in perturbation set at DTO overlap",
+    render: (row) => formatInteger(row.perturbationSetSize),
+  },
+  {
+    key: "rank25",
+    label: "Percent responsive: Top 25 Binding Targets",
+    description: "Responsive fraction in the 25 most bound genes",
+    render: (row) => formatPercentage(row.rank25, 2),
+  },
+]
+
+const SUMMARY_IDENTIFIER_COLUMN_DEFS: ColumnDef<SummaryTableRow>[] = [
+  {
+    key: "singleBinding",
+    label: "Single binding",
+    description: "Number of single binding identifiers",
+    render: (row) => formatInteger(row.singleBinding),
+  },
+  {
+    key: "compositeBinding",
+    label: "Composite binding",
+    description: "Number of composite binding identifiers",
+    render: (row) => formatInteger(row.compositeBinding),
+  },
+]
+
+const DEFAULT_REPLICATE_GENERAL_COLUMNS: string[] = ["bindingSourceLabel", "rankResponseStatus", "dtoStatus"]
+const DEFAULT_REPLICATE_CALLING_CARD_COLUMNS: string[] = []
+const DEFAULT_SUMMARY_METRIC_COLUMNS: string[] = ["univariateRsquared", "dtoEmpiricalPvalue", "rank25"]
+const DEFAULT_SUMMARY_IDENTIFIER_COLUMNS: string[] = []
+
 const buildPlotFigure = (
   group: RankResponseExpressionGroup,
-  selectedKeys: Set<string>,
+  selectedIds: Set<string>,
 ): { data: Data[]; layout: Partial<Layout> } => {
   const traces: Data[] = []
 
@@ -117,9 +320,12 @@ const buildPlotFigure = (
     }
   }
 
+  const groupHasSelection = selectedIds.size === 0 || group.traces.some((trace) => selectedIds.has(trace.promotersetsig))
+
   group.traces.forEach((trace) => {
-    const shouldHighlight =
-      selectedKeys.size === 0 || selectedKeys.has(trace.promotersetsig) || selectedKeys.has(trace.id)
+    const shouldHighlight = groupHasSelection
+      ? selectedIds.size === 0 || selectedIds.has(trace.promotersetsig)
+      : true
     traces.push({
       type: "scatter",
       mode: "lines",
@@ -129,10 +335,10 @@ const buildPlotFigure = (
       legendgroup: trace.promotersetsig,
       hovertemplate: `${trace.bindingSourceLabel}; ${trace.promotersetsig}<br># Responsive / # Genes: %{y:.2%}<extra></extra>`,
       line: {
-        width: shouldHighlight ? 2.5 : 1.5,
-        color: shouldHighlight ? undefined : "#cbd5f5",
+        width: shouldHighlight ? 2.5 : 1,
+        color: shouldHighlight ? undefined : "#d1d5db",
       },
-      visible: shouldHighlight ? true : "legendonly",
+      opacity: shouldHighlight ? 1 : 0.25,
     })
   })
 
@@ -193,34 +399,90 @@ const deriveRegulatorOptions = (metadata: RankResponseMetadataRow[]): RegulatorO
   return Array.from(map.values())
 }
 
-const buildReplicateRows = (payload: RankResponseRegulatorPayload | null): ReplicateRow[] => {
+const normalizeQcStatus = (value?: string | null): string | null => {
+  if (!value) return null
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized.includes("fail") || normalized.includes("invalid") || normalized.includes("remove")) return "Fail"
+  if (normalized.includes("pass") || normalized.includes("ok") || normalized.includes("good")) return "Pass"
+  if (normalized.includes("mixed")) return "Mixed"
+  return value
+}
+
+const summarizeStatus = (values: Set<string>): string | null => {
+  if (!values.size) return null
+  if (values.has("Fail")) return "Fail"
+  if (values.has("Pass")) return "Pass"
+  if (values.size === 1) return values.values().next().value ?? null
+  return values.values().next().value ?? null
+}
+
+const buildReplicateRows = (payload: RankResponseRegulatorPayload | null): ReplicateTableRow[] => {
   if (!payload) return []
 
-  return payload.metadata
-    .map((row) => {
-      const selectionKey = row.promotersetsig ?? row.id
-      return {
-        id: row.id,
-        selectionKey,
-        bindingSourceLabel: row.bindingSourceLabel ?? row.bindingSource,
-        expressionSource: row.expressionSource,
-        expressionSourceLabel: row.expressionSourceLabel ?? row.expressionSource,
-        expressionTime: row.expressionTime ?? null,
-        promotersetsig: row.promotersetsig ?? row.id,
-        randomExpectation: row.randomExpectation ?? null,
-        rank25: row.rank25 ?? null,
-        rank50: row.rank50 ?? null,
-        passing: row.passing ?? null,
+  type Accumulator = {
+    promotersetsig: string
+    bindingSourceLabel: string
+    rankStatuses: Set<string>
+    dtoStatuses: Set<string>
+    genomicInserts: number | null
+    mitoInserts: number | null
+    plasmidInserts: number | null
+  }
+
+  const map = new Map<string, Accumulator>()
+
+  payload.metadata.forEach((row) => {
+    const promotersetsig = row.promotersetsig ?? row.id
+    const bindingSourceLabel = row.bindingSourceLabel ?? row.bindingSource
+    let accumulator = map.get(promotersetsig)
+    if (!accumulator) {
+      accumulator = {
+        promotersetsig,
+        bindingSourceLabel,
+        rankStatuses: new Set<string>(),
+        dtoStatuses: new Set<string>(),
+        genomicInserts: null,
+        mitoInserts: null,
+        plasmidInserts: null,
       }
-    })
+      map.set(promotersetsig, accumulator)
+    }
+
+    const normalizedRankStatus = normalizeQcStatus(row.rankResponseStatus)
+    if (normalizedRankStatus) {
+      accumulator.rankStatuses.add(normalizedRankStatus)
+    }
+    const normalizedDtoStatus = normalizeQcStatus(row.dtoStatus)
+    if (normalizedDtoStatus) {
+      accumulator.dtoStatuses.add(normalizedDtoStatus)
+    }
+    if (accumulator.genomicInserts === null && row.genomicInserts !== null && row.genomicInserts !== undefined) {
+      accumulator.genomicInserts = row.genomicInserts
+    }
+    if (accumulator.mitoInserts === null && row.mitoInserts !== null && row.mitoInserts !== undefined) {
+      accumulator.mitoInserts = row.mitoInserts
+    }
+    if (accumulator.plasmidInserts === null && row.plasmidInserts !== null && row.plasmidInserts !== undefined) {
+      accumulator.plasmidInserts = row.plasmidInserts
+    }
+  })
+
+  return Array.from(map.values())
+    .map((acc) => ({
+      promotersetsig: acc.promotersetsig,
+      bindingSourceLabel: acc.bindingSourceLabel,
+      rankResponseStatus: summarizeStatus(acc.rankStatuses),
+      dtoStatus: summarizeStatus(acc.dtoStatuses),
+      genomicInserts: acc.genomicInserts,
+      mitoInserts: acc.mitoInserts,
+      plasmidInserts: acc.plasmidInserts,
+    }))
     .sort((a, b) => {
-      if (a.expressionSource === b.expressionSource) {
-        if (a.bindingSourceLabel === b.bindingSourceLabel) {
-          return a.promotersetsig.localeCompare(b.promotersetsig)
-        }
-        return a.bindingSourceLabel.localeCompare(b.bindingSourceLabel)
+      if (a.bindingSourceLabel === b.bindingSourceLabel) {
+        return a.promotersetsig.localeCompare(b.promotersetsig)
       }
-      return a.expressionSource.localeCompare(b.expressionSource)
+      return a.bindingSourceLabel.localeCompare(b.bindingSourceLabel)
     })
 }
 
@@ -231,7 +493,16 @@ export default function IndividualRegulatorCompareTab() {
   const [useSystematicNames, setUseSystematicNames] = useState(false)
   const [selectedRegulatorId, setSelectedRegulatorId] = useState<string | null>(null)
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false)
-  const [selectedPromotersetsigs, setSelectedPromotersetsigs] = useState<Set<string>>(new Set())
+  const [selectedReplicateIds, setSelectedReplicateIds] = useState<Set<string>>(new Set())
+  const [replicateGeneralColumns, setReplicateGeneralColumns] = useState<string[]>(DEFAULT_REPLICATE_GENERAL_COLUMNS)
+  const [replicateCallingCardColumns, setReplicateCallingCardColumns] = useState<string[]>(
+    DEFAULT_REPLICATE_CALLING_CARD_COLUMNS,
+  )
+  const [summaryMetricColumns, setSummaryMetricColumns] = useState<string[]>(DEFAULT_SUMMARY_METRIC_COLUMNS)
+  const [summaryIdentifierColumns, setSummaryIdentifierColumns] = useState<string[]>(
+    DEFAULT_SUMMARY_IDENTIFIER_COLUMNS,
+  )
+  const [isSummaryDescriptionOpen, setIsSummaryDescriptionOpen] = useState(false)
 
   const {
     data: regulatorData,
@@ -241,8 +512,12 @@ export default function IndividualRegulatorCompareTab() {
   } = useRankResponseRegulator(selectedRegulatorId)
 
   useEffect(() => {
-    setSelectedPromotersetsigs(new Set())
+    setSelectedReplicateIds(new Set())
   }, [regulatorData?.regulator.id])
+
+  useEffect(() => {
+    setIsSummaryDescriptionOpen(false)
+  }, [selectedRegulatorId])
 
   const displayedOptions = useMemo(() => {
     const labelFromOption = (option: RegulatorOption) => {
@@ -270,39 +545,135 @@ export default function IndividualRegulatorCompareTab() {
   }, [displayedOptions, selectedRegulatorId])
 
   const replicateRows = useMemo(() => buildReplicateRows(regulatorData), [regulatorData])
-  const allSelectionKeys = useMemo(() => replicateRows.map((row) => row.selectionKey), [replicateRows])
+  const allSelectionIds = useMemo(() => replicateRows.map((row) => row.promotersetsig), [replicateRows])
 
   const expressionGroups = regulatorData?.expressionGroups ?? {}
 
+  const replicateColumnDefs = useMemo(() => {
+    const generalSet = new Set(replicateGeneralColumns)
+    const callingCardSet = new Set(replicateCallingCardColumns)
+    const generalDefs = REPLICATE_GENERAL_QC_COLUMN_DEFS.filter((def) => generalSet.has(def.key))
+    const callingCardDefs = REPLICATE_CALLING_CARD_COLUMN_DEFS.filter((def) => callingCardSet.has(def.key))
+    return [...REPLICATE_BASE_COLUMN_DEFS, ...generalDefs, ...callingCardDefs]
+  }, [replicateGeneralColumns, replicateCallingCardColumns])
+
+  const summaryMetricColumnDefs = useMemo(() => {
+    const selectedSet = new Set(summaryMetricColumns)
+    return SUMMARY_METRIC_COLUMN_DEFS.filter((def) => selectedSet.has(def.key))
+  }, [summaryMetricColumns])
+
+  const summaryIdentifierColumnDefs = useMemo(() => {
+    const selectedSet = new Set(summaryIdentifierColumns)
+    return SUMMARY_IDENTIFIER_COLUMN_DEFS.filter((def) => selectedSet.has(def.key))
+  }, [summaryIdentifierColumns])
+
+  const summaryColumnDefs = useMemo(
+    () => [...SUMMARY_BASE_COLUMN_DEFS, ...summaryMetricColumnDefs, ...summaryIdentifierColumnDefs],
+    [summaryMetricColumnDefs, summaryIdentifierColumnDefs],
+  )
+
+  const metadataByExpressionSource = useMemo(() => {
+    const map = new Map<string, SummaryTableRow[]>()
+    regulatorData?.metadata.forEach((row) => {
+      const collection = map.get(row.expressionSource) ?? []
+      collection.push({
+        id: row.id,
+        bindingSourceLabel: row.bindingSourceLabel ?? row.bindingSource,
+        promotersetsig: row.promotersetsig ?? row.id,
+        expressionId: row.expressionId ?? null,
+        expressionSourceLabel: row.expressionSourceLabel ?? row.expressionSource,
+        expressionTime: row.expressionTime ?? null,
+        randomExpectation: row.randomExpectation ?? null,
+        rank25: row.rank25 ?? null,
+        rank50: row.rank50 ?? null,
+        dtoEmpiricalPvalue: row.dtoEmpiricalPvalue ?? null,
+        dtoFdr: row.dtoFdr ?? null,
+        univariateRsquared: row.univariateRsquared ?? null,
+        univariatePvalue: row.univariatePvalue ?? null,
+        bindingRankThreshold: row.bindingRankThreshold ?? null,
+        perturbationRankThreshold: row.perturbationRankThreshold ?? null,
+        bindingSetSize: row.bindingSetSize ?? null,
+        perturbationSetSize: row.perturbationSetSize ?? null,
+        singleBinding: row.singleBinding ?? null,
+        compositeBinding: row.compositeBinding ?? null,
+        passing: row.passing ?? null,
+      })
+      map.set(row.expressionSource, collection)
+    })
+    map.forEach((list, key) => {
+      list.sort((a, b) => {
+        if (a.bindingSourceLabel === b.bindingSourceLabel) {
+          if (a.promotersetsig === b.promotersetsig) {
+            return (a.expressionId ?? "").localeCompare(b.expressionId ?? "")
+          }
+          return a.promotersetsig.localeCompare(b.promotersetsig)
+        }
+        return a.bindingSourceLabel.localeCompare(b.bindingSourceLabel)
+      })
+      map.set(key, list)
+    })
+    return map
+  }, [regulatorData])
+
+  useEffect(() => {
+    setSelectedReplicateIds((prev) => {
+      const validValues = new Set(replicateRows.map((row) => row.promotersetsig))
+      let changed = false
+      prev.forEach((value) => {
+        if (!validValues.has(value)) {
+          changed = true
+        }
+      })
+      if (!changed) return prev
+      const next = new Set<string>()
+      prev.forEach((value) => {
+        if (validValues.has(value)) {
+          next.add(value)
+        }
+      })
+      return next
+    })
+  }, [replicateRows])
+
+  const selectedReplicateCount = useMemo(() => {
+    let count = 0
+    replicateRows.forEach((row) => {
+      if (selectedReplicateIds.has(row.promotersetsig)) {
+        count += 1
+      }
+    })
+    return count
+  }, [replicateRows, selectedReplicateIds])
+
   const headerCheckboxState = useMemo(() => {
-    if (!replicateRows.length || selectedPromotersetsigs.size === 0) {
+    if (!replicateRows.length || selectedReplicateCount === 0) {
       return false
     }
-    if (selectedPromotersetsigs.size === replicateRows.length) {
+    if (selectedReplicateCount === replicateRows.length) {
       return true
     }
     return "indeterminate" as const
-  }, [replicateRows.length, selectedPromotersetsigs])
+  }, [replicateRows.length, selectedReplicateCount])
 
-  const toggleSelectionKey = (key: string) => {
-    setSelectedPromotersetsigs((prev) => {
+  const toggleReplicateId = (id: string) => {
+    setSelectedReplicateIds((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
+      if (next.has(id)) {
+        next.delete(id)
       } else {
-        next.add(key)
+        next.add(id)
       }
       return next
     })
   }
 
-  const setSelectionKeyState = (key: string, checked: boolean | "indeterminate") => {
-    setSelectedPromotersetsigs((prev) => {
+  const setReplicateIdState = (id: string, checked: boolean | "indeterminate") => {
+    setSelectedReplicateIds((prev) => {
       const next = new Set(prev)
       if (checked === true || checked === "indeterminate") {
-        next.add(key)
+        next.add(id)
       } else {
-        next.delete(key)
+        next.delete(id)
       }
       return next
     })
@@ -311,15 +682,63 @@ export default function IndividualRegulatorCompareTab() {
   const handleHeaderCheckboxChange = (checked: boolean | "indeterminate") => {
     if (checked === "indeterminate") return
     if (checked) {
-      setSelectedPromotersetsigs(new Set(allSelectionKeys))
+      setSelectedReplicateIds(new Set(allSelectionIds))
     } else {
-      setSelectedPromotersetsigs(new Set())
+      setSelectedReplicateIds(new Set())
     }
   }
 
   const handleRegulatorChange = (value: string) => {
     if (value === "__empty") return
     setSelectedRegulatorId(value)
+  }
+
+  const handleReplicateGeneralToggle = (key: string, checked: boolean | "indeterminate") => {
+    setReplicateGeneralColumns((prev) => {
+      const set = new Set(prev)
+      if (checked) {
+        set.add(key)
+      } else {
+        set.delete(key)
+      }
+      return Array.from(set)
+    })
+  }
+
+  const handleReplicateCallingCardToggle = (key: string, checked: boolean | "indeterminate") => {
+    setReplicateCallingCardColumns((prev) => {
+      const set = new Set(prev)
+      if (checked) {
+        set.add(key)
+      } else {
+        set.delete(key)
+      }
+      return Array.from(set)
+    })
+  }
+
+  const handleSummaryMetricToggle = (key: string, checked: boolean | "indeterminate") => {
+    setSummaryMetricColumns((prev) => {
+      const set = new Set(prev)
+      if (checked) {
+        set.add(key)
+      } else {
+        set.delete(key)
+      }
+      return Array.from(set)
+    })
+  }
+
+  const handleSummaryIdentifierToggle = (key: string, checked: boolean | "indeterminate") => {
+    setSummaryIdentifierColumns((prev) => {
+      const set = new Set(prev)
+      if (checked) {
+        set.add(key)
+      } else {
+        set.delete(key)
+      }
+      return Array.from(set)
+    })
   }
 
   const collapseButton = (
@@ -392,20 +811,182 @@ export default function IndividualRegulatorCompareTab() {
           </Card>
 
           <Card className="shadow-sm border-border/60">
-            <Accordion type="single" collapsible defaultValue="legend">
-              <AccordionItem value="legend" className="border-0">
+            <Accordion type="single" collapsible defaultValue="replicate-columns">
+              <AccordionItem value="replicate-columns" className="border-0">
                 <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 transition-colors">
-                  <span className="font-semibold text-base">Legend</span>
+                  <span className="font-semibold text-base">Replicate Table Columns</span>
                 </AccordionTrigger>
-                <AccordionContent className="px-6 pb-5 pt-2 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                  <p>
-                    Selecting rows in the replicate table filters which traces are highlighted in the plots. Clearing the
-                    selection restores all traces.
-                  </p>
-                  <p>
-                    Hover over traces to view the responsive fraction at a specific rank threshold. The dashed line
-                    denotes the random expectation; the shaded band shows its 95% confidence interval.
-                  </p>
+                <AccordionContent className="px-6 pb-5 pt-2 space-y-5">
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      General QC Metrics
+                    </span>
+                    <div className="mt-3 space-y-3">
+                      {REPLICATE_GENERAL_QC_COLUMN_DEFS.map((column) => {
+                        const checkboxId = `replicate-general-${column.key}`
+                        const descriptionId = column.description ? `${checkboxId}-description` : undefined
+                        return (
+                          <div
+                            key={column.key}
+                            className="flex items-start gap-3 rounded-md p-3 hover:bg-muted/50"
+                            title={column.description ?? undefined}
+                          >
+                            <Checkbox
+                              id={checkboxId}
+                              checked={replicateGeneralColumns.includes(column.key)}
+                              onCheckedChange={(checked) => handleReplicateGeneralToggle(column.key, checked)}
+                              aria-describedby={descriptionId}
+                            />
+                            <div>
+                              <Label
+                                htmlFor={checkboxId}
+                                className="text-sm font-medium leading-tight cursor-pointer"
+                                title={column.description ?? undefined}
+                              >
+                                {column.label}
+                              </Label>
+                              {descriptionId ? (
+                                <span id={descriptionId} className="sr-only">
+                                  {column.description}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Calling Cards QC Metrics
+                    </span>
+                    <div className="mt-3 space-y-3">
+                      {REPLICATE_CALLING_CARD_COLUMN_DEFS.map((column) => {
+                        const checkboxId = `replicate-calling-card-${column.key}`
+                        const descriptionId = column.description ? `${checkboxId}-description` : undefined
+                        return (
+                          <div
+                            key={column.key}
+                            className="flex items-start gap-3 rounded-md p-3 hover:bg-muted/50"
+                            title={column.description ?? undefined}
+                          >
+                            <Checkbox
+                              id={checkboxId}
+                              checked={replicateCallingCardColumns.includes(column.key)}
+                              onCheckedChange={(checked) => handleReplicateCallingCardToggle(column.key, checked)}
+                              aria-describedby={descriptionId}
+                            />
+                            <div>
+                              <Label
+                                htmlFor={checkboxId}
+                                className="text-sm font-medium leading-tight cursor-pointer"
+                                title={column.description ?? undefined}
+                              >
+                                {column.label}
+                              </Label>
+                              {descriptionId ? (
+                                <span id={descriptionId} className="sr-only">
+                                  {column.description}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </Card>
+
+          <Card className="shadow-sm border-border/60">
+            <Accordion type="single" collapsible defaultValue="summary-columns">
+              <AccordionItem value="summary-columns" className="border-0">
+                <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 transition-colors">
+                  <span className="font-semibold text-base">Summary Table Columns</span>
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-5 pt-2 space-y-5">
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Comparison Metrics
+                    </span>
+                    <div className="mt-3 space-y-3">
+                      {SUMMARY_METRIC_COLUMN_DEFS.map((column) => {
+                        const checkboxId = `summary-metric-${column.key}`
+                        const descriptionId = column.description ? `${checkboxId}-description` : undefined
+                        return (
+                          <div
+                            key={column.key}
+                            className="flex items-start gap-3 rounded-md p-3 hover:bg-muted/50"
+                            title={column.description ?? undefined}
+                          >
+                            <Checkbox
+                              id={checkboxId}
+                              checked={summaryMetricColumns.includes(column.key)}
+                              onCheckedChange={(checked) => handleSummaryMetricToggle(column.key, checked)}
+                              aria-describedby={descriptionId}
+                            />
+                            <div>
+                              <Label
+                                htmlFor={checkboxId}
+                                className="text-sm font-medium leading-tight cursor-pointer"
+                                title={column.description ?? undefined}
+                              >
+                                {column.label}
+                              </Label>
+                              {descriptionId ? (
+                                <span id={descriptionId} className="sr-only">
+                                  {column.description}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Database Identifier Columns
+                    </span>
+                    <div className="mt-3 space-y-3">
+                      {SUMMARY_IDENTIFIER_COLUMN_DEFS.map((column) => {
+                        const checkboxId = `summary-identifier-${column.key}`
+                        const descriptionId = column.description ? `${checkboxId}-description` : undefined
+                        return (
+                          <div
+                            key={column.key}
+                            className="flex items-start gap-3 rounded-md p-3 hover:bg-muted/50"
+                            title={column.description ?? undefined}
+                          >
+                            <Checkbox
+                              id={checkboxId}
+                              checked={summaryIdentifierColumns.includes(column.key)}
+                              onCheckedChange={(checked) => handleSummaryIdentifierToggle(column.key, checked)}
+                              aria-describedby={descriptionId}
+                            />
+                            <div>
+                              <Label
+                                htmlFor={checkboxId}
+                                className="text-sm font-medium leading-tight cursor-pointer"
+                                title={column.description ?? undefined}
+                              >
+                                {column.label}
+                              </Label>
+                              {descriptionId ? (
+                                <span id={descriptionId} className="sr-only">
+                                  {column.description}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
@@ -486,39 +1067,150 @@ export default function IndividualRegulatorCompareTab() {
                 </TabsList>
                 {EXPRESSION_TAB_ORDER.map((key) => {
                   const groups = expressionGroups[key] ?? []
+                  const summaryRows = metadataByExpressionSource.get(key) ?? []
+                  const summaryDescriptionTitleId = `summary-description-title-${key}`
+                  const summaryDescriptionBodyId = `summary-description-body-${key}`
                   return (
-                    <TabsContent key={key} value={key} className="mt-6 space-y-6">
-                      {!groups.length ? (
-                        <div className="min-h-[280px] flex items-center justify-center border border-dashed border-muted rounded-lg bg-muted/20">
-                          <span className="text-sm text-muted-foreground">No plots available for this condition.</span>
+                    <TabsContent key={key} value={key} className="mt-6">
+                      <div className="lg:grid lg:grid-cols-3 gap-6">
+                        <div className="lg:col-span-2 space-y-6">
+                          {!groups.length ? (
+                            <div className="min-h-[280px] flex items-center justify-center border border-dashed border-muted rounded-lg bg-muted/20">
+                              <span className="text-sm text-muted-foreground">No plots available for this condition.</span>
+                            </div>
+                          ) : (
+                            groups.map((group) => {
+                              const figure = buildPlotFigure(group, selectedReplicateIds)
+                              return (
+                                <Card key={group.expressionId} className="shadow-sm border-border/60">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-base font-semibold">
+                                      {group.expressionSourceLabel} · Expression {group.expressionId}
+                                    </CardTitle>
+                                    <p className="text-xs text-muted-foreground">
+                                      Time point: {formatTime(group.expressionTime)}
+                                    </p>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <Plot
+                                      data={figure.data}
+                                      layout={figure.layout}
+                                      config={PLOT_CONFIG}
+                                      className="w-full h-[360px]"
+                                    />
+                                  </CardContent>
+                                </Card>
+                              )
+                            })
+                          )}
                         </div>
-                      ) : (
-                        <div className="grid gap-6 lg:grid-cols-2">
-                          {groups.map((group) => {
-                            const figure = buildPlotFigure(group, selectedPromotersetsigs)
-                            return (
-                              <Card key={group.expressionId} className="shadow-sm border-border/60">
-                                <CardHeader className="pb-2">
-                                  <CardTitle className="text-base font-semibold">
-                                    {group.expressionSourceLabel} · Expression {group.expressionId}
-                                  </CardTitle>
-                                  <p className="text-xs text-muted-foreground">
-                                    Time point: {formatTime(group.expressionTime)}
+
+                        <div className="lg:col-span-1">
+                          <Card className="relative shadow-sm border-border/60">
+                            {isSummaryDescriptionOpen ? (
+                              <div
+                                role="dialog"
+                                aria-modal="false"
+                                aria-labelledby={summaryDescriptionTitleId}
+                                aria-describedby={summaryDescriptionBodyId}
+                                className="absolute right-4 top-16 z-30 w-80 rounded-lg border border-border/60 bg-card p-4 shadow-xl"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <p id={summaryDescriptionTitleId} className="text-sm font-semibold text-foreground">
+                                    Summary Table Overview
                                   </p>
-                                </CardHeader>
-                                <CardContent>
-                                  <Plot
-                                    data={figure.data}
-                                    layout={figure.layout}
-                                    config={PLOT_CONFIG}
-                                    className="w-full h-[360px]"
-                                  />
-                                </CardContent>
-                              </Card>
-                            )
-                          })}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label="Close summary description"
+                                    onClick={() => setIsSummaryDescriptionOpen(false)}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                                <div
+                                  id={summaryDescriptionBodyId}
+                                  className="mt-3 space-y-2 text-xs text-muted-foreground leading-relaxed"
+                                >
+                                  <p>
+                                    <strong className="text-foreground">Overview:</strong> Each row shows summary
+                                    statistics for comparing one binding dataset (or replicate) to one
+                                    perturbation-response dataset.
+                                  </p>
+                                  <p>
+                                    <strong className="text-foreground">Navigation:</strong> Tabs switch between
+                                    perturbation datasets. Use the sidebar to control visible columns.
+                                  </p>
+                                  <p>
+                                    <strong className="text-foreground">Analysis Methods:</strong> Metrics combine the
+                                    responsive fraction among top bound genes, linear modeling of response versus
+                                    binding, and Dual Threshold Optimization (DTO).
+                                  </p>
+                                </div>
+                              </div>
+                            ) : null}
+                            <CardHeader className="pb-4">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-1">
+                                  <CardTitle className="text-lg font-semibold">Summary Statistics</CardTitle>
+                                  <p className="text-xs text-muted-foreground">
+                                    Metrics for {EXPRESSION_TAB_LABELS[key] ?? key} replicates.
+                                  </p>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="mt-1 h-8 w-8"
+                                  aria-label="Show summary description"
+                                  aria-expanded={isSummaryDescriptionOpen}
+                                  aria-controls={summaryDescriptionBodyId}
+                                  onClick={() => setIsSummaryDescriptionOpen((prev) => !prev)}
+                                >
+                                  <Info className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </CardHeader>
+                            <CardContent className="overflow-x-auto">
+                              {summaryRows.length ? (
+                                <table className="w-full text-xs">
+                                  <thead className="bg-muted/50">
+                                    <tr className="text-left">
+                                      {summaryColumnDefs.map((column) => (
+                                        <th key={column.key} className="px-4 py-2 font-semibold">
+                                          {column.label}
+                                        </th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {summaryRows.map((row) => {
+                                      const isSelected = selectedReplicateIds.has(row.promotersetsig)
+                                      return (
+                                        <tr
+                                          key={row.id}
+                                          className={`border-b border-border/30 transition-colors ${
+                                            isSelected ? "bg-primary/10" : "hover:bg-muted/40"
+                                          }`}
+                                        >
+                                          {summaryColumnDefs.map((column) => (
+                                            <td key={column.key} className="px-4 py-2">
+                                              {column.render(row)}
+                                            </td>
+                                          ))}
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              ) : (
+                                <div className="min-h-[200px] flex items-center justify-center text-muted-foreground">
+                                  No summary statistics available for this condition.
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
                         </div>
-                      )}
+                      </div>
                     </TabsContent>
                   )
                 })}
@@ -557,46 +1249,37 @@ export default function IndividualRegulatorCompareTab() {
                           aria-label="Select all replicates"
                         />
                       </th>
-                      <th className="px-4 py-3 font-semibold">Binding Source</th>
-                      <th className="px-4 py-3 font-semibold">Expression Source</th>
-                      <th className="px-4 py-3 font-semibold">Promoterset</th>
-                      <th className="px-4 py-3 font-semibold">Random Expectation</th>
-                      <th className="px-4 py-3 font-semibold">Rank 25</th>
-                      <th className="px-4 py-3 font-semibold">Rank 50</th>
-                      <th className="px-4 py-3 font-semibold">Passing QC</th>
+                      {replicateColumnDefs.map((column) => (
+                        <th key={column.key} className="px-4 py-3 font-semibold">
+                          {column.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {replicateRows.map((row) => {
-                      const isSelected = selectedPromotersetsigs.has(row.selectionKey)
+                      const isSelected = selectedReplicateIds.has(row.promotersetsig)
                       return (
                         <tr
-                          key={row.id}
+                          key={row.promotersetsig}
                           className={`border-b border-border/40 transition-colors ${
                             isSelected ? "bg-primary/10 hover:bg-primary/20" : "hover:bg-muted/40"
                           }`}
-                          onClick={() => toggleSelectionKey(row.selectionKey)}
+                          onClick={() => toggleReplicateId(row.promotersetsig)}
                         >
                           <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                             <Checkbox
                               checked={isSelected}
-                              onCheckedChange={(checked) => setSelectionKeyState(row.selectionKey, checked)}
+                              onCheckedChange={(checked) => setReplicateIdState(row.promotersetsig, checked)}
                               aria-label={`Toggle ${row.promotersetsig}`}
                               onClick={(event) => event.stopPropagation()}
                             />
                           </td>
-                          <td className="px-4 py-3">{row.bindingSourceLabel}</td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-col">
-                              <span>{row.expressionSourceLabel}</span>
-                              <span className="text-xs text-muted-foreground">{formatTime(row.expressionTime)}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">{row.promotersetsig}</td>
-                          <td className="px-4 py-3">{formatPercentage(row.randomExpectation, 2)}</td>
-                          <td className="px-4 py-3">{formatPercentage(row.rank25, 2)}</td>
-                          <td className="px-4 py-3">{formatPercentage(row.rank50, 2)}</td>
-                          <td className="px-4 py-3">{row.passing === null ? "—" : row.passing ? "Yes" : "No"}</td>
+                          {replicateColumnDefs.map((column) => (
+                            <td key={column.key} className="px-4 py-3">
+                              {column.render(row)}
+                            </td>
+                          ))}
                         </tr>
                       )
                     })}
@@ -607,16 +1290,16 @@ export default function IndividualRegulatorCompareTab() {
             <CardFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-foreground border-t pt-4 leading-relaxed">
               <div>
                 <strong>Selection:</strong>{" "}
-                {selectedPromotersetsigs.size
-                  ? `${selectedPromotersetsigs.size} of ${replicateRows.length} replicates highlighted`
+                {selectedReplicateIds.size
+                  ? `${selectedReplicateIds.size} of ${replicateRows.length} replicates highlighted`
                   : "All replicates visible"}
               </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedPromotersetsigs(new Set())}
-                  disabled={!selectedPromotersetsigs.size}
+                  onClick={() => setSelectedReplicateIds(new Set())}
+                  disabled={!selectedReplicateIds.size}
                 >
                   Clear selection
                 </Button>
@@ -625,37 +1308,7 @@ export default function IndividualRegulatorCompareTab() {
           </Card>
         </div>
 
-        <div className="space-y-4">
-          <Accordion type="single" collapsible className="border border-border/60 rounded-lg shadow-sm">
-            <AccordionItem value="comparison-description" className="border-0">
-              <AccordionTrigger className="px-5 py-4 hover:no-underline hover:bg-muted/50 transition-colors">
-                <span className="text-sm font-semibold">
-                  Summarized Binding-Perturbation Comparisons Description
-                </span>
-              </AccordionTrigger>
-              <AccordionContent className="px-5 pb-5 space-y-3 text-sm text-muted-foreground leading-relaxed">
-                <div>
-                  <strong className="text-foreground">Overview:</strong>
-                  <br />
-                  Each row of the summary table on this page shows statistics for comparing one binding dataset (or
-                  replicate) to one perturbation-response dataset.
-                </div>
-                <div>
-                  <strong className="text-foreground">Navigation:</strong>
-                  <br />
-                  The tabs at the top show tables for different perturbation datasets. The sidebar controls which
-                  columns are displayed.
-                </div>
-                <div>
-                  <strong className="text-foreground">Analysis Methods:</strong>
-                  <br />
-                  Statistics are derived from: (1) fraction responsive among the 25 or 50 most strongly bound genes, (2)
-                  linear modeling of response versus binding strength, and (3) Dual Threshold Optimization (DTO).
-                </div>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
-
+        <div className="mt-6">
           <Alert className="border-primary/20 bg-primary/5 shadow-sm">
             <Info className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
             <AlertDescription className="text-sm leading-relaxed">

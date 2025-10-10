@@ -41,6 +41,8 @@ export interface RankResponseMetadataRow {
   expressionTime?: number | null
   bindingRankThreshold?: number | null
   perturbationRankThreshold?: number | null
+  bindingSetSize?: number | null
+  perturbationSetSize?: number | null
   rankResponseStatus?: string | null
   dtoStatus?: string | null
   passing?: boolean | null

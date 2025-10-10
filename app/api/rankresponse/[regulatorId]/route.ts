@@ -354,6 +354,8 @@ const parseMetadataRow = (row: Record<string, unknown>): RankResponseMetadataRow
     univariateRsquared: parseNumber(row.univariate_rsquared),
     bindingRankThreshold: parseNumber(row.binding_rank_threshold),
     perturbationRankThreshold: parseNumber(row.perturbation_rank_threshold),
+    bindingSetSize: parseNumber(row.binding_set_size ?? row.bindingSetSize),
+    perturbationSetSize: parseNumber(row.perturbation_set_size ?? row.perturbationSetSize),
     dtoStatus: ensureString(row.dto_status) ?? null,
     rankResponseStatus: ensureString(row.rank_response_status) ?? null,
     passing: parseBoolean(row.passing),
