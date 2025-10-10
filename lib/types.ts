@@ -102,3 +102,10 @@ export interface PerturbationResponseData {
   targetSymbol: string
   [key: string]: number | string
 }
+
+export interface CorrelationMatrixResponse {
+  labels: string[]
+  matrix: number[][]
+  min: number
+  max: number
+}
