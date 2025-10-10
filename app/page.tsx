@@ -11,7 +11,7 @@ export default function Home() {
   return (
     <main className="h-screen flex flex-col bg-background">
       <div className="border-b bg-white shadow-sm">
-        <div className="container mx-auto px-8 py-4">
+        <div className="mx-auto w-full max-w-[1600px] px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-primary">
@@ -37,7 +37,7 @@ export default function Home() {
       </div>
 
       <div className="bg-white border-b flex-1 flex flex-col overflow-hidden">
-        <div className="container mx-auto px-8 flex-1 flex flex-col overflow-hidden">
+        <div className="mx-auto w-full max-w-[1600px] px-8 flex-1 flex flex-col overflow-hidden">
           <Tabs defaultValue="home" className="w-full flex-1 flex flex-col overflow-hidden">
             <TabsList className="h-12 bg-transparent border-0 rounded-none p-0 gap-1">
               <TabsTrigger
@@ -73,7 +73,7 @@ export default function Home() {
             </TabsList>
 
             <div className="bg-background flex-1 overflow-auto">
-              <div className="container mx-auto px-8 py-8">
+              <div className="mx-auto w-full max-w-[1600px] px-8 py-8">
                 <TabsContent value="home" className="mt-0">
                   <HomeTab />
                 </TabsContent>
