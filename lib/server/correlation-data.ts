@@ -254,39 +254,28 @@ const createLoader = (
   return async (): Promise<CorrelationMatrixPayload> => {
     if (!cachedPromise) {
       cachedPromise = (async () => {
-        let localLoadError: unknown = null
+        if (apiUrl) {
+          const fromApi = await fetchCorrelationFromApi(apiUrl, debugLabel)
+          if (fromApi) {
+            return fromApi
+          }
+          if (debugLabel) {
+            console.warn(`[correlation] Falling back to local files for ${debugLabel} correlation data`)
+          } else {
+            console.warn("[correlation] Falling back to local files for correlation data")
+          }
+        }
+
         try {
           return await loadCorrelationData(filename, options, debugLabel)
         } catch (error) {
-          localLoadError = error
           if (debugLabel) {
             console.warn(`[correlation] Failed to load ${debugLabel} correlation data from local files`, error)
           } else {
             console.warn("[correlation] Failed to load correlation data from local files", error)
           }
+          throw error instanceof Error ? error : new Error(String(error))
         }
-
-        if (apiUrl) {
-          if (debugLabel) {
-            console.warn(`[correlation] Falling back to API for ${debugLabel} correlation data`)
-          } else {
-            console.warn("[correlation] Falling back to API for correlation data")
-          }
-          const fromApi = await fetchCorrelationFromApi(apiUrl, debugLabel)
-          if (fromApi) {
-            return fromApi
-          }
-        }
-
-        if (localLoadError) {
-          throw localLoadError
-        }
-
-        throw new Error(
-          debugLabel
-            ? `[correlation] Unable to load ${debugLabel} correlation data from local files or API`
-            : "[correlation] Unable to load correlation data from local files or API",
-        )
       })()
     }
     return cachedPromise
