@@ -15,7 +15,10 @@ type LoaderOptions = {
   dropColumns?: Set<string>
 }
 
-const DATA_DIRECTORY = path.join(process.cwd(), "data")
+const DATA_DIRECTORIES = [
+  path.join(process.cwd(), "tmp", "shiny_data"),
+  path.join(process.cwd(), "data"),
+]
 
 const isValidCorrelationPayload = (value: unknown): value is CorrelationMatrixPayload => {
   if (typeof value !== "object" || value === null) return false
@@ -106,8 +109,54 @@ const computeCorrelationMatrix = (columns: (number | null)[][]): { matrix: numbe
   return { matrix, min, max }
 }
 
-const loadCsvTable = async (filename: string): Promise<NumericTable> => {
-  const csvPath = path.join(DATA_DIRECTORY, filename)
+const sortCorrelationPayload = (payload: CorrelationMatrixPayload): CorrelationMatrixPayload => {
+  const order = payload.labels.map((label, index) => ({ label, index })).sort((a, b) => a.label.localeCompare(b.label))
+
+  let isAlreadySorted = true
+  for (let i = 0; i < order.length; i += 1) {
+    if (order[i]?.index !== i) {
+      isAlreadySorted = false
+      break
+    }
+  }
+
+  if (isAlreadySorted) {
+    return payload
+  }
+
+  const labels = order.map((entry) => entry.label)
+  const matrix = order.map(({ index: rowIndex }) => {
+    return order.map(({ index: columnIndex }) => payload.matrix[rowIndex]?.[columnIndex] ?? 0)
+  })
+
+  return {
+    labels,
+    matrix,
+    min: payload.min,
+    max: payload.max,
+  }
+}
+
+const locateDataFile = async (filename: string): Promise<string> => {
+  for (const directory of DATA_DIRECTORIES) {
+    const candidate = path.join(directory, filename)
+    try {
+      await fs.access(candidate)
+      return candidate
+    } catch (error) {
+      const typed = error as NodeJS.ErrnoException
+      if (typed.code && typed.code !== "ENOENT") {
+        throw error
+      }
+    }
+  }
+
+  throw new Error(
+    `Unable to locate correlation data file "${filename}" in directories: ${DATA_DIRECTORIES.join(", ")}`,
+  )
+}
+
+const loadCsvTable = async (csvPath: string): Promise<NumericTable> => {
   const fileContents = await fs.readFile(csvPath, "utf8")
 
   const parsed = Papa.parse<Record<string, unknown>>(fileContents, {
@@ -117,7 +166,10 @@ const loadCsvTable = async (filename: string): Promise<NumericTable> => {
   })
 
   if (parsed.errors.length) {
-    console.warn(`Papaparse encountered ${parsed.errors.length} errors while parsing ${filename}`, parsed.errors[0])
+    console.warn(
+      `Papaparse encountered ${parsed.errors.length} errors while parsing ${path.basename(csvPath)}`,
+      parsed.errors[0],
+    )
   }
 
   return parsed.data
@@ -126,8 +178,18 @@ const loadCsvTable = async (filename: string): Promise<NumericTable> => {
 const loadCorrelationData = async (
   filename: string,
   options: LoaderOptions = {},
+  debugLabel?: string,
 ): Promise<CorrelationMatrixPayload> => {
-  const table = await loadCsvTable(filename)
+  const csvPath = await locateDataFile(filename)
+  if (debugLabel) {
+    console.info(
+      `[correlation] Loaded ${debugLabel} correlation data from file`,
+      path.relative(process.cwd(), csvPath),
+    )
+  } else {
+    console.info("[correlation] Loaded correlation data from file", path.relative(process.cwd(), csvPath))
+  }
+  const table = await loadCsvTable(csvPath)
   if (!table.length) {
     return { labels: [], matrix: [], min: 0, max: 1 }
   }
@@ -149,10 +211,13 @@ const loadCorrelationData = async (
   })
 
   const { matrix, min, max } = computeCorrelationMatrix(columnValues)
-  return { labels, matrix, min, max }
+  return sortCorrelationPayload({ labels, matrix, min, max })
 }
 
-const fetchCorrelationFromApi = async (url: string): Promise<CorrelationMatrixPayload | null> => {
+const fetchCorrelationFromApi = async (
+  url: string,
+  debugLabel?: string,
+): Promise<CorrelationMatrixPayload | null> => {
   try {
     const response = await fetch(url, {
       cache: "no-store",
@@ -164,38 +229,82 @@ const fetchCorrelationFromApi = async (url: string): Promise<CorrelationMatrixPa
     if (!isValidCorrelationPayload(json)) {
       throw new Error("Correlation API response was not in the expected format.")
     }
-    return json
+    const payload: CorrelationMatrixPayload = sortCorrelationPayload(json)
+
+    if (debugLabel) {
+      console.info(`[correlation] Loaded ${debugLabel} correlation data from API`, { url })
+    } else {
+      console.info("[correlation] Loaded correlation data from API", { url })
+    }
+    return payload
   } catch (error) {
     console.warn(`Failed to load correlation data from API (${url}):`, error)
     return null
   }
 }
 
-const createLoader = (filename: string, options: LoaderOptions = {}, apiUrl?: string) => {
+const createLoader = (
+  filename: string,
+  options: LoaderOptions = {},
+  apiUrl?: string,
+  debugLabel?: string,
+) => {
   let cachedPromise: Promise<CorrelationMatrixPayload> | null = null
 
   return async (): Promise<CorrelationMatrixPayload> => {
     if (!cachedPromise) {
       cachedPromise = (async () => {
+        let localLoadError: unknown = null
+        try {
+          return await loadCorrelationData(filename, options, debugLabel)
+        } catch (error) {
+          localLoadError = error
+          if (debugLabel) {
+            console.warn(`[correlation] Failed to load ${debugLabel} correlation data from local files`, error)
+          } else {
+            console.warn("[correlation] Failed to load correlation data from local files", error)
+          }
+        }
+
         if (apiUrl) {
-          const fromApi = await fetchCorrelationFromApi(apiUrl)
+          if (debugLabel) {
+            console.warn(`[correlation] Falling back to API for ${debugLabel} correlation data`)
+          } else {
+            console.warn("[correlation] Falling back to API for correlation data")
+          }
+          const fromApi = await fetchCorrelationFromApi(apiUrl, debugLabel)
           if (fromApi) {
             return fromApi
           }
         }
-        return loadCorrelationData(filename, options)
+
+        if (localLoadError) {
+          throw localLoadError
+        }
+
+        throw new Error(
+          debugLabel
+            ? `[correlation] Unable to load ${debugLabel} correlation data from local files or API`
+            : "[correlation] Unable to load correlation data from local files or API",
+        )
       })()
     }
     return cachedPromise
   }
 }
 
-export const getBindingCorrelationData = createLoader("cc_predictors_normalized.csv", {
-  dropColumns: new Set(["red_median"]),
-}, process.env.BINDING_CORRELATION_API)
+export const getBindingCorrelationData = createLoader(
+  "cc_predictors_normalized.csv",
+  {
+    dropColumns: new Set(["red_median"]),
+  },
+  process.env.BINDING_CORRELATION_API,
+  "binding",
+)
 
 export const getPerturbationCorrelationData = createLoader(
   "response_data.csv",
   {},
   process.env.PERTURBATION_CORRELATION_API,
+  "perturbation",
 )

@@ -1,8 +1,6 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import type { Config, Data, Layout } from "plotly.js"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
@@ -14,23 +12,7 @@ import { Button } from "@/components/ui/button"
 import { useRankResponseMetadata } from "@/lib/hooks/use-rank-response-metadata"
 import type { CorrelationMatrixResponse } from "@/lib/types"
 import { getPerturbationSourceLabel } from "@/lib/utils"
-
-const Plot = dynamic(() => import("@/components/plotly.client"), { ssr: false })
-
-const HEATMAP_CONFIG: Partial<Config> = {
-  displaylogo: false,
-  responsive: true,
-  modeBarButtonsToRemove: ["zoom2d", "pan2d", "select2d", "lasso2d", "autoScale2d"] as string[],
-}
-
-const WHITE_TO_NAVY_SCALE: [number, string][] = [
-  [0, "#ffffff"],
-  [0.2, "#dbe7ff"],
-  [0.4, "#b3cdfb"],
-  [0.6, "#7aa4f6"],
-  [0.8, "#3c70e0"],
-  [1, "#0e2f80"],
-]
+import { CorrelationHeatmap } from "@/components/plots/correlation-heatmap"
 
 const PERTURBATION_SOURCES = [
   { id: "mcisaac_oe", label: "Overexpression (McIsaac Lab)" },
@@ -194,44 +176,6 @@ export default function PerturbationResponseTab() {
   const handleCorrelationRetry = useCallback(() => {
     void fetchCorrelationMatrix()
   }, [fetchCorrelationMatrix])
-
-  const perturbationHeatmapData = useMemo<Data[] | null>(() => {
-    if (!correlationData) return null
-    const heatmap: Data = {
-      type: "heatmap",
-      z: correlationData.matrix,
-      x: correlationData.labels,
-      y: correlationData.labels,
-      colorscale: WHITE_TO_NAVY_SCALE,
-      zmin: 0,
-      zmax: 1,
-      hovertemplate: "<b>%{y}</b> vs <b>%{x}</b><br>r=%{z:.2f}<extra></extra>",
-      colorbar: {
-        title: { text: "Pearson r" },
-        titleside: "right",
-        tickformat: ".2f",
-      },
-    }
-    return [heatmap]
-  }, [correlationData])
-
-  const perturbationHeatmapLayout = useMemo<Partial<Layout> | undefined>(() => {
-    if (!correlationData) return undefined
-    return {
-      xaxis: {
-        tickangle: -45,
-        automargin: true,
-        autorange: "reversed",
-      },
-      yaxis: {
-        automargin: true,
-      },
-      margin: { l: 140, r: 40, t: 30, b: 160 },
-      height: 480,
-      paper_bgcolor: "rgba(0,0,0,0)",
-      plot_bgcolor: "rgba(0,0,0,0)",
-    }
-  }, [correlationData])
 
   const handleSourceToggle = (source: string) => {
     setSelectedSources((prev) => {
@@ -561,17 +505,14 @@ export default function PerturbationResponseTab() {
           </Card>
 
           <Card className="shadow-sm border-border/60 hover:shadow-md transition-shadow">
-            <CardHeader className="space-y-2 pb-4">
-              <CardTitle className="text-lg font-semibold">Perturbation Correlation Matrix</CardTitle>
-            </CardHeader>
-            <CardContent className="min-h-[500px] p-0">
+            <CardContent className="min-h-[540px] p-4">
               {isCorrelationLoading ? (
-                <div className="flex h-full min-h-[500px] w-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                <div className="flex h-full min-h-[540px] w-full flex-col items-center justify-center gap-3 text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin" />
                   <p className="text-sm">Loading correlation matrix…</p>
                 </div>
               ) : correlationError ? (
-                <div className="flex h-full min-h-[500px] w-full flex-col items-center justify-center gap-2 p-6 text-center">
+                <div className="flex h-full min-h-[540px] w-full flex-col items-center justify-center gap-2 p-6 text-center">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
                     <AlertTriangle className="h-8 w-8 text-destructive" />
                   </div>
@@ -580,24 +521,19 @@ export default function PerturbationResponseTab() {
                     Retry
                   </Button>
                 </div>
-              ) : perturbationHeatmapData && perturbationHeatmapLayout ? (
-                <Plot
-                  data={perturbationHeatmapData}
-                  layout={perturbationHeatmapLayout}
-                  config={HEATMAP_CONFIG}
-                  style={{ width: "100%", height: "100%", minHeight: "480px" }}
-                  useResizeHandler
+              ) : correlationData ? (
+                <CorrelationHeatmap
+                  correlationData={correlationData}
+                  title="Clustered TF Correlation Matrix"
+                  minHeight="520px"
                 />
               ) : (
-                <div className="flex h-full min-h-[500px] w-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
+                <div className="flex h-full min-h-[540px] w-full flex-col items-center justify-center gap-2 p-6 text-center text-muted-foreground">
                   <p className="text-sm font-medium text-foreground">Correlation data unavailable</p>
                   <p className="text-xs">No perturbation correlation matrix data is available at this time.</p>
                 </div>
               )}
             </CardContent>
-            <CardFooter className="text-xs text-muted-foreground border-t pt-4">
-              Click and drag to zoom in on a specific region of the correlation matrix. Double click to reset the zoom.
-            </CardFooter>
           </Card>
         </div>
       </div>

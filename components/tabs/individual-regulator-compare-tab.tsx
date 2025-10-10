@@ -1,8 +1,8 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import type { Config, Data, Layout } from "plotly.js"
+import { PlotlyChart } from "@/components/plots/plotly-chart"
 import {
   Alert,
   AlertDescription,
@@ -26,8 +26,6 @@ import type {
   RankResponseReplicateTrace,
 } from "@/lib/types"
 import { getPerturbationSourceLabel } from "@/lib/utils"
-
-const Plot = dynamic(() => import("@/components/plotly.client"), { ssr: false })
 
 const PLOT_CONFIG: Partial<Config> = {
   displaylogo: false,
@@ -1092,7 +1090,7 @@ export default function IndividualRegulatorCompareTab() {
                                     </p>
                                   </CardHeader>
                                   <CardContent>
-                                    <Plot
+                                    <PlotlyChart
                                       data={figure.data}
                                       layout={figure.layout}
                                       config={PLOT_CONFIG}

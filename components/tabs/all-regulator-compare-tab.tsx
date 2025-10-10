@@ -1,8 +1,8 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import { type ReactNode, useEffect, useMemo, useState } from "react"
 import type { Data, Layout, Config, ModeBarDefaultButtons } from "plotly.js"
+import { PlotlyChart } from "@/components/plots/plotly-chart"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
@@ -22,11 +22,6 @@ import {
 
 } from "@/lib/utils"
 import { useRankResponseMetadata } from "@/lib/hooks/use-rank-response-metadata"
-
-
-const Plot = dynamic(() => import("@/components/plotly.client"), {
-  ssr: false,
-})
 
 const COLOR_PALETTE = [
   "#1f77b4",
@@ -382,12 +377,12 @@ export default function AllRegulatorCompareTab() {
     }
 
     return (
-      <Plot
+      <PlotlyChart
         data={figure.data}
         layout={figure.layout}
         config={DEFAULT_PLOT_CONFIG}
-        style={{ width: "100%", height: "100%" }}
         className="w-full h-full"
+        style={{ width: "100%", height: "100%" }}
       />
     )
   }
