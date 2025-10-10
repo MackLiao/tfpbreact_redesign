@@ -15,10 +15,7 @@ type LoaderOptions = {
   dropColumns?: Set<string>
 }
 
-const DATA_DIRECTORIES = [
-  path.join(process.cwd(), "tmp", "shiny_data"),
-  path.join(process.cwd(), "data"),
-]
+const DATA_DIRECTORIES = [path.join(process.cwd(), "tmp", "shiny_data"), path.join(process.cwd(), "data")]
 
 const isValidCorrelationPayload = (value: unknown): value is CorrelationMatrixPayload => {
   if (typeof value !== "object" || value === null) return false
@@ -90,8 +87,7 @@ const computeCorrelationMatrix = (columns: (number | null)[][]): { matrix: numbe
 
   for (let rowIndex = 0; rowIndex < size; rowIndex += 1) {
     for (let colIndex = rowIndex; colIndex < size; colIndex += 1) {
-      const correlation =
-        rowIndex === colIndex ? 1 : computePearsonCorrelation(columns[rowIndex], columns[colIndex])
+      const correlation = rowIndex === colIndex ? 1 : computePearsonCorrelation(columns[rowIndex], columns[colIndex])
 
       matrix[rowIndex][colIndex] = correlation
       matrix[colIndex][rowIndex] = correlation
@@ -151,9 +147,7 @@ const locateDataFile = async (filename: string): Promise<string> => {
     }
   }
 
-  throw new Error(
-    `Unable to locate correlation data file "${filename}" in directories: ${DATA_DIRECTORIES.join(", ")}`,
-  )
+  throw new Error(`Unable to locate correlation data file "${filename}" in directories: ${DATA_DIRECTORIES.join(", ")}`)
 }
 
 const loadCsvTable = async (csvPath: string): Promise<NumericTable> => {
@@ -182,10 +176,7 @@ const loadCorrelationData = async (
 ): Promise<CorrelationMatrixPayload> => {
   const csvPath = await locateDataFile(filename)
   if (debugLabel) {
-    console.info(
-      `[correlation] Loaded ${debugLabel} correlation data from file`,
-      path.relative(process.cwd(), csvPath),
-    )
+    console.info(`[correlation] Loaded ${debugLabel} correlation data from file`, path.relative(process.cwd(), csvPath))
   } else {
     console.info("[correlation] Loaded correlation data from file", path.relative(process.cwd(), csvPath))
   }
@@ -214,10 +205,7 @@ const loadCorrelationData = async (
   return sortCorrelationPayload({ labels, matrix, min, max })
 }
 
-const fetchCorrelationFromApi = async (
-  url: string,
-  debugLabel?: string,
-): Promise<CorrelationMatrixPayload | null> => {
+const fetchCorrelationFromApi = async (url: string, debugLabel?: string): Promise<CorrelationMatrixPayload | null> => {
   try {
     const response = await fetch(url, {
       cache: "no-store",
@@ -243,12 +231,7 @@ const fetchCorrelationFromApi = async (
   }
 }
 
-const createLoader = (
-  filename: string,
-  options: LoaderOptions = {},
-  apiUrl?: string,
-  debugLabel?: string,
-) => {
+const createLoader = (filename: string, options: LoaderOptions = {}, apiUrl?: string, debugLabel?: string) => {
   let cachedPromise: Promise<CorrelationMatrixPayload> | null = null
 
   return async (): Promise<CorrelationMatrixPayload> => {
@@ -281,6 +264,16 @@ const createLoader = (
     return cachedPromise
   }
 }
+
+console.log("[v0] Environment variables check:", {
+  BINDING_CORRELATION_API: process.env.BINDING_CORRELATION_API,
+  PERTURBATION_CORRELATION_API: process.env.PERTURBATION_CORRELATION_API,
+  TFBP_API_TOKEN: process.env.TFBP_API_TOKEN,
+  TOKEN: process.env.TOKEN,
+  allEnvKeys: Object.keys(process.env).filter(
+    (key) => key.includes("CORRELATION") || key.includes("TOKEN") || key.includes("API"),
+  ),
+})
 
 export const getBindingCorrelationData = createLoader(
   "cc_predictors_normalized.csv",
