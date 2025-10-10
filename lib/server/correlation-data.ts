@@ -249,31 +249,14 @@ const createLoader = (filename: string, options: LoaderOptions = {}, apiUrl?: st
           }
         }
 
-        try {
-          return await loadCorrelationData(filename, options, debugLabel)
-        } catch (error) {
-          if (debugLabel) {
-            console.warn(`[correlation] Failed to load ${debugLabel} correlation data from local files`, error)
-          } else {
-            console.warn("[correlation] Failed to load correlation data from local files", error)
-          }
-          throw error instanceof Error ? error : new Error(String(error))
-        }
+        throw new Error(
+          `Unable to load ${debugLabel || "correlation"} data. Please configure the API endpoint in environment variables.`,
+        )
       })()
     }
     return cachedPromise
   }
 }
-
-console.log("[v0] Environment variables check:", {
-  BINDING_CORRELATION_API: process.env.BINDING_CORRELATION_API,
-  PERTURBATION_CORRELATION_API: process.env.PERTURBATION_CORRELATION_API,
-  TFBP_API_TOKEN: process.env.TFBP_API_TOKEN,
-  TOKEN: process.env.TOKEN,
-  allEnvKeys: Object.keys(process.env).filter(
-    (key) => key.includes("CORRELATION") || key.includes("TOKEN") || key.includes("API"),
-  ),
-})
 
 export const getBindingCorrelationData = createLoader(
   "cc_predictors_normalized.csv",
